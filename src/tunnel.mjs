@@ -4,13 +4,13 @@
 //    `cloudflared tunnel route dns <name> <hostname>`。地址永远不变。
 //  - 快速隧道（默认）：没配 config.tunnel 时用 trycloudflare.com，不用账号，但每次重启地址都会变。
 import { spawn } from 'child_process';
-import fs from 'fs'; import path from 'path';
+import fs from 'fs'; import path from 'path'; import { fileURLToPath } from 'url';
 import { notify, config } from './feishu.mjs';
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'data', 'tunnel.json');
 const port = config.web?.port || 8787, key = config.web?.key;
 const named = config.tunnel?.name && config.tunnel?.hostname;
-const CF = config.tunnel?.bin || '/opt/homebrew/bin/cloudflared';
+const CF = config.tunnel?.bin || (process.platform === 'win32' ? 'cloudflared.exe' : '/opt/homebrew/bin/cloudflared');
 // QUIC 在不少网络下被拦，统一走 http2
 const args = named
   ? ['tunnel', '--no-autoupdate', '--protocol', 'http2', 'run', '--url', `http://127.0.0.1:${port}`, config.tunnel.name]
