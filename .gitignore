@@ -8,3 +8,6 @@ state/
 scripts-*.sh
 MAINTENANCE.md
 demo/
+silent-web.vbs
+一键登录.bat
+启动麦田控制台.bat

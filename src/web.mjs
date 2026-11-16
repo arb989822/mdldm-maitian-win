@@ -59,7 +59,7 @@ function widgetScript(req, file) {
 const latestPublished = () => episodes().filter(e => e.schedule && Date.parse(e.schedule) <= Date.now()).sort((a, b) => Date.parse(b.schedule) - Date.parse(a.schedule))[0];
 // 手机小组件：只读汇总（粉丝、涨幅、最新一期播放、站点近 7 天），用单独的 config.web.widgetToken，只能读这一个接口
 function widgetData() {
-  const ORDER = ['bilibili', 'douyin', 'xhs', 'channels', 'youtube', 'x', 'instagram'];
+  const ORDER = ['bilibili', 'douyin', 'xhs', 'channels', 'youtube', 'kuaishou', 'instagram'];
   const rows = db.prepare("SELECT day, platform, total FROM followers WHERE day >= date('now','localtime','-40 day') AND total IS NOT NULL ORDER BY day").all();
   const by = {}; for (const r of rows) (by[r.platform] ||= []).push(r);
   const today = new Date().toLocaleDateString('sv-SE');
@@ -152,7 +152,8 @@ async function handle(req, res) {
     let f;
     if (u.pathname === '/shot') f = path.join(ep.dir, '发布档案', `${(u.searchParams.get('p') || '').replace(/\W/g, '')}.jpg`);
     else { const pj = readPj(ep.dir) || {}; const rel = (pj.covers || {})[u.searchParams.get('k') || '4x3'] || Object.values(pj.covers || {})[0]; f = rel && path.join(ep.dir, rel); }
-    if (!f || !f.startsWith(ep.dir) || !fs.existsSync(f)) return send(res, 404, '');
+    const norm = (p) => process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p);
+    if (!f || !norm(f).startsWith(norm(ep.dir)) || !fs.existsSync(f)) return send(res, 404, '');
     // 远程打开时原图（每张 ~700KB）太慢：默认给缩略图（长边 ≤ w，默认 720，JPEG），缓存在 data/thumbs；?full=1 给原图
     if (!u.searchParams.get('full') && !/\.svg$/.test(f)) { const t = thumb(f, Math.min(1600, +u.searchParams.get('w') || 720)); if (t) return send(res, 200, fs.readFileSync(t), 'image/jpeg', { 'cache-control': 'max-age=3600' }); }
     return send(res, 200, fs.readFileSync(f), /\.png$/.test(f) ? 'image/png' : /\.svg$/.test(f) ? 'image/svg+xml' : 'image/jpeg', { 'cache-control': 'max-age=300' });

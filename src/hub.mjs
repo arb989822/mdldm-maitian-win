@@ -10,7 +10,7 @@
 //   hub adopt <工程目录>                         登记一期已发过的（不上传）
 //   hub metrics [id]                            采集流量并发日报
 //   hub daemon                                  常驻：到点自动取链接、提醒还没点发布的平台
-import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os'; import crypto from 'node:crypto'; import { execFileSync, spawn } from 'node:child_process';
+import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os'; import crypto from 'node:crypto'; import { execFileSync, spawn } from 'node:child_process'; import { fileURLToPath } from 'node:url';
 import { db, NAMES, LOCKED, STATE_CN, upsertEpisode, getTask, getTasks, setTask, log, episodes, getEpisode, recentLogs, getMeta, setMeta, saveMetric, prevMetric, saveSnapshot } from './db.mjs';
 import { collectors } from './metrics.mjs';
 import { boardSync } from './board.mjs';
@@ -28,8 +28,8 @@ const strip = (s) => String(s || '').replace(/ *\d+%/, '');
 const mapState = (s) => s === '待你发布' || s === '已填写' ? 'filled' : s === '异常' || s === '上传超时' ? 'failed' : s === '未登录' ? 'not_logged_in' : s === '已停止' ? 'stopped' : s === '跳过' ? 'skipped' : 'running';
 const loadProject = (dir) => JSON.parse(fs.readFileSync(path.join(dir, 'publish.json'), 'utf8'));
 const projectOf = (ep, pj) => ({ dir: path.relative(config.rootPath, ep.dir), data: pj });
-const ALL = ['bilibili', 'xhs', 'douyin', 'channels', 'youtube', 'x', 'instagram', 'zsz'].filter(id => id !== 'zsz' || SITE);   // 没配自有站点就不管 zsz
-const LOGIN_PAGES = { bilibili: 'https://member.bilibili.com/platform/upload/video/frame', xhs: 'https://creator.xiaohongshu.com/publish/publish?source=official&target=video', douyin: 'https://creator.douyin.com/creator-micro/content/upload', channels: 'https://channels.weixin.qq.com/platform/post/create', youtube: 'https://studio.youtube.com/', x: 'https://x.com/home', instagram: 'https://www.instagram.com/', zsz: SITE ? SITE.admin : '' };
+const ALL = ['bilibili', 'xhs', 'douyin', 'channels', 'kuaishou', 'youtube', 'x', 'instagram', 'zsz'].filter(id => id !== 'zsz' || SITE);   // 没配自有站点就不管 zsz
+const LOGIN_PAGES = { bilibili: 'https://member.bilibili.com/platform/upload/video/frame', xhs: 'https://creator.xiaohongshu.com/publish/publish?source=official&target=video', douyin: 'https://creator.douyin.com/creator-micro/content/upload', channels: 'https://channels.weixin.qq.com/platform/post/create', kuaishou: 'https://cp.kuaishou.com/article/publish/video', youtube: 'https://studio.youtube.com/', x: 'https://x.com/home', instagram: 'https://www.instagram.com/', zsz: SITE ? SITE.admin : '' };
 
 function table(eid) {
   return getTasks(eid).map(t => `${NAMES[t.platform] || t.platform}：${STATE_CN[t.state] || t.state}${t.detail ? `（${t.detail.slice(0, 80)}）` : ''}${t.url ? ` ${t.url}` : ''}`).join('\n');
@@ -274,6 +274,7 @@ async function doctor() {
 async function ensureNas() {
   const ok = () => { try { fs.accessSync(config.rootPath); return true; } catch { return false; } };
   if (ok()) return true;
+  if (process.platform !== 'darwin') return false;
   // 2026-11-14：NAS 掉线重连后，macOS 有时把它挂到「…-1」，原路径就读不到了（封面全挂、NAS 灯变红）。
   // 发现同一个共享挂在带后缀的路径上，先卸掉再按原路径挂回来
   try {
@@ -289,7 +290,7 @@ async function ensureNas() {
 // X 长文模式：到点前启动插件仓库里的 tools/x-article-quote.mjs（走日常 Chrome 里插件的开发桥）
 const extId = () => config.extensionId || [...crypto.createHash('sha256').update(path.resolve(config.pluginDir)).digest('hex').slice(0, 32)].map(c => String.fromCharCode(97 + parseInt(c, 16))).join('');
 function startArticleJob(ep, pj) {
-  const x = pj.platforms.x, dir = ep.dir, logf = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'data', `x-article-${ep.id}.log`);
+  const x = pj.platforms.x, dir = ep.dir, logf = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', `x-article-${ep.id}.log`);
   const textf = path.join(path.dirname(logf), `x-article-${ep.id}.txt`); fs.writeFileSync(textf, x.text || '');
   try { execFileSync('lsof', ['-iTCP:8765', '-sTCP:LISTEN'], { stdio: 'pipe' }); }
   catch { spawn(process.execPath, ['tools/bridge-server.mjs'], { cwd: config.pluginDir, detached: true, stdio: 'ignore' }).unref(); }
@@ -341,7 +342,7 @@ async function daemon() {
         const zt = tasks.find(t => t.platform === 'zsz');
         if (zt && zt.state === 'pending' && sched && Date.now() >= sched - ZSZ_LEAD * MIN && Date.now() < sched + 6 * 60 * MIN && every(`zszrun:${ep.id}`, 20 * MIN)) {
           log(ep.id, 'zsz', 'deferred-run', '定时前自动建课');
-          execFileSync('node', [path.join(path.dirname(new URL(import.meta.url).pathname), 'hub.mjs'), 'run', ep.dir, '--only', 'zsz'], { stdio: 'inherit', timeout: 40 * MIN });
+          execFileSync('node', [path.join(path.dirname(fileURLToPath(import.meta.url)), 'hub.mjs'), 'run', ep.dir, '--only', 'zsz'], { stdio: 'inherit', timeout: 40 * MIN });
         }
         if (zt && zt.state === 'scheduled' && every(`zszcheck:${ep.id}`, 10 * MIN)) {
           const pj0 = loadProject(ep.dir); const cs = await zszCourses(pj0.platforms.zsz.title).catch(() => []);

@@ -26,7 +26,8 @@ export async function ensureBridge() {
     await sleep(1500);
   }
   if (await ping()) return;
-  execFileSync('open', ['-g', '-a', 'Google Chrome', `chrome-extension://${config.extensionId}/sidepanel.html`]);
+  if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '', `chrome-extension://${config.extensionId}/sidepanel.html`], { detached: true, stdio: 'ignore' }).unref();
+  else execFileSync('open', ['-g', '-a', 'Google Chrome', `chrome-extension://${config.extensionId}/sidepanel.html`]);
   for (let i = 0; i < 10; i++) { await sleep(2000); if (await ping()) return; }
   throw new Error('插件面板没有响应：Chrome 可能有弹窗卡住，或插件没加载');
 }

@@ -1,5 +1,6 @@
 // 驱动选择：direct = 中控直连专用 Chrome（默认）；plugin = 通过插件面板的开发桥
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { config } from './feishu.mjs';
 import * as bridge from './bridge.mjs';
 
@@ -10,8 +11,8 @@ async function load() {
   if (lib) return lib;
   const shim = await import('./chrome-shim.mjs');
   globalThis.chrome = shim.chrome;
-  const pub = await import(path.join(config.pluginDir, 'lib/publish.js'));
-  const cdp = await import(path.join(config.pluginDir, 'lib/cdp.js'));
+  const pub = await import(pathToFileURL(path.join(config.pluginDir, 'lib/publish.js')).href);
+  const cdp = await import(pathToFileURL(path.join(config.pluginDir, 'lib/cdp.js')).href);
   return (lib = { shim, pub, cdp });
 }
 
@@ -63,6 +64,6 @@ export async function close() { if (lib) lib.shim.closeConnection(); }
 // 页面截图（存档用），返回 JPEG Buffer
 export async function screenshot(tabId) {
   const params = { format: 'jpeg', quality: 70 };
-  const r = mode === 'plugin' ? await bridge.call({ op: 'cdp', tabId, method: 'Page.captureScreenshot', params }) : await (await load()).cdp.send(tabId, 'Page.captureScreenshot', params);
+  const r = mode === 'plugin' ? await bridge.call({ op: 'cdp', tabId, method: 'Page.captureScreenshot', params }, 60000) : await (await load()).cdp.send(tabId, 'Page.captureScreenshot', params);
   return Buffer.from(r.data, 'base64');
 }
