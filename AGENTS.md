@@ -66,7 +66,8 @@ powershell -ExecutionPolicy Bypass -File scripts/install-win.ps1
 
 ### 5. 注册 Windows 后台常驻服务（推荐）
 不要仅在临时终端里跑 `node src/hub.mjs web`（终端关闭即停）。应注册 Windows 计划任务 `MaitianWeb`：
-- 创建无黑框启动脚本 `silent-web.vbs`（不入 git），用 `Register-ScheduledTask` 设 `AtLogOn` 触发，这样开机/登录后 `http://localhost:8787/?key=<key>` 永远在线。
+- 创建无黑框启动脚本 `silent-web.vbs`（不入 git），运行 `node src\hub.mjs daemon`（同时拉起网页控制台与守护进程，自动扫描新工程、登录保活、定时取链接），用 `Register-ScheduledTask` 设 `AtLogOn` 触发与失败自动重启，这样开机/登录后 `http://localhost:8787/?key=<key>` 永远在线。
+- 安全默认：Web 控制台默认仅监听 `127.0.0.1`（如需局域网访问可在 `config.json` 的 `web.host` 设为 `"0.0.0.0"`）；开发桥 `127.0.0.1:8765` 仅接受 Chrome 扩展与本机带 `x-maitian-bridge: 1` 请求头的进程，屏蔽第三方网页跨站调用。
 
 ---
 

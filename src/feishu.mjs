@@ -2,12 +2,12 @@ import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath }
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CFG = process.env.MAITIAN_CONFIG || path.join(ROOT, 'config.json');
 if (!fs.existsSync(CFG)) { console.error('还没有 config.json：先运行 node src/init.mjs（安装向导），或者 node src/demo.mjs 用假数据看看效果'); process.exit(1); }
-export const config = JSON.parse(fs.readFileSync(CFG, 'utf8'));
+export const config = JSON.parse(fs.readFileSync(CFG, 'utf8').replace(/^\uFEFF/, ''));
 
 // ---------- 文字 → 飞书卡片（2026-11-14） ----------
 // 调用方仍然传文字：第一行当标题，开头的表情决定卡片颜色；「平台：状态（说明） 链接」这种行排成带颜色的状态行。
 const COLOR = [[/^(✅|🎉)/, 'green'], [/^(👉|⏰)/, 'orange'], [/^❌/, 'red'], [/^⚠️/, 'yellow'], [/^🚀/, 'blue'], [/^(📋|🔗)/, 'wathet'], [/^🩺/, 'turquoise'], [/^(📊|📈)/, 'purple'], [/^🌐/, 'indigo']];
-const PLAT = /^(B站|小红书|抖音|视频号|YouTube|X|知识站)：([^（(\s]+)(?:[（(](.*)[)）])?\s*(https?:\/\/\S+)?\s*$/;
+const PLAT = /^(B站|小红书|抖音|视频号|快手|YouTube|X|Instagram|知识站)：([^（(\s]+)(?:[（(](.*)[)）])?\s*(https?:\/\/\S+)?\s*$/;
 const STATE_COLOR = (s) => /已发布|已上线/.test(s) ? 'green' : /已定时|已填好/.test(s) ? 'blue' : /待你点发布/.test(s) ? 'orange' : /异常|未登录|失败/.test(s) ? 'red' : 'grey';
 const esc = (s) => String(s).replace(/[<>]/g, (c) => ({ '<': '&lt;', '>': '&gt;' }[c]));
 const link = (s) => esc(s).replace(/https?:\/\/[^\s；;，,）)]+/g, (u) => `[${u.replace(/^https?:\/\/(www\.)?/, '').slice(0, 42)}${u.length > 50 ? '…' : ''}](${u})`);

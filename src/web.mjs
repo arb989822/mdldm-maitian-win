@@ -90,8 +90,9 @@ button{width:100%;height:50px;border:0;border-radius:14px;background:#1c1a16;col
 <pre id="c"></pre><script>const code=${JSON.stringify(code).replace(/</g, '\\u003c')};document.getElementById('c').textContent=code;
 document.getElementById('b').onclick=async()=>{try{await navigator.clipboard.writeText(code);b.textContent='已复制 ✓';}catch{const r=document.createRange();r.selectNodeContents(c);getSelection().removeAllRanges();getSelection().addRange(r);b.textContent='长按选中的文字复制';}};</script></body></html>`;
 
-// 缩略图：macOS 自带 sips 缩放转 JPEG，按 原文件路径+修改时间+尺寸 缓存；失败返回 null（退回原图）
+// 缩略图：macOS 自带 sips 缩放转 JPEG，按 原文件路径+修改时间+尺寸 缓存；非 macOS 或失败返回 null（退回原图）
 function thumb(f, w) {
+  if (process.platform !== 'darwin') return null;
   try {
     const st = fs.statSync(f), dir = path.join(ROOT, 'data', 'thumbs');
     const out = path.join(dir, crypto.createHash('sha1').update(`${f}|${st.mtimeMs}|${w}`).digest('hex') + '.jpg');
@@ -101,6 +102,13 @@ function thumb(f, w) {
     return fs.existsSync(out) ? out : null;
   } catch { return null; }
 }
+function isInside(baseDir, targetFile) {
+  if (!baseDir || !targetFile) return false;
+  const norm = (p) => process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p);
+  const rel = path.relative(norm(baseDir), norm(targetFile));
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+const isHttpsReq = (req) => req.headers['x-forwarded-proto'] === 'https' || /https/.test(req.headers['cf-visitor'] || '');
 
 async function handle(req, res) {
   const u = new URL(req.url, 'http://x');
@@ -110,10 +118,10 @@ async function handle(req, res) {
     if (!W.widgetToken || !tokenEq(u.searchParams.get('t'), W.widgetToken)) return send(res, 401, '');
     let f = null;
     if (u.searchParams.get('k') === 'avatar') f = W.avatar && path.resolve(ROOT, W.avatar);
-    else { const ep = latestPublished(); const pj = ep && (readPj(ep.dir) || {}); const rel = pj && ((pj.covers || {})[u.searchParams.get('k') || '4x3'] || Object.values(pj.covers || {})[0]); f = rel && path.join(ep.dir, rel); }
+    else { const ep = latestPublished(); const pj = ep && (readPj(ep.dir) || {}); const rel = pj && ((pj.covers || {})[u.searchParams.get('k') || '4x3'] || Object.values(pj.covers || {})[0]); const cand = rel && path.join(ep.dir, rel); f = ep && cand && isInside(ep.dir, cand) ? cand : null; }
     if (!f || !fs.existsSync(f)) return send(res, 404, '');
     const t = thumb(f, Math.min(800, +u.searchParams.get('w') || 400));
-    return send(res, 200, fs.readFileSync(t || f), t ? 'image/jpeg' : 'image/png', { 'cache-control': 'max-age=1800' });
+    return send(res, 200, fs.readFileSync(t || f), t ? 'image/jpeg' : /\.png$/i.test(f) ? 'image/png' : 'image/jpeg', { 'cache-control': 'max-age=1800' });
   }
   if (u.pathname === '/api/widget/code') return W.widgetToken && tokenEq(u.searchParams.get('t'), W.widgetToken) ? send(res, 200, widgetScript(req, 'maitian-widget.js'), 'text/javascript; charset=utf-8') : send(res, 401, '');   // 加载器每次刷新来取最新代码
   if (u.pathname === '/api/widget') return W.widgetToken && tokenEq(u.searchParams.get('t') || req.headers['x-widget-token'], W.widgetToken) ? send(res, 200, widgetData()) : send(res, 401, { error: '小组件口令不对' });
@@ -121,9 +129,9 @@ async function handle(req, res) {
   // 飞书验证码登录（config.web.login = "feishu"）：/login 页面和接口不需要先登录
   const LOGIN = W.login === 'feishu' && config.feishuWebhook;
   if (LOGIN && await handleLogin(req, res, u, send)) return;
-  const cookieKey = ((req.headers.cookie || '').match(/mt_key=([^;]+)/) || [])[1];
-  if (W.key && cookieKey !== W.key && !(LOGIN && sessionOk(req)) && !(await accessEmail(req, W.access))) {
-    if (u.searchParams.get('key') === W.key) return send(res, 302, '', 'text/plain', { 'set-cookie': `mt_key=${W.key}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax`, location: '/' });
+  const cookieKey = ((req.headers.cookie || '').match(/(?:^|;\s*)mt_key=([^;]+)/) || [])[1];
+  if (W.key && !tokenEq(cookieKey, W.key) && !(LOGIN && sessionOk(req)) && !(await accessEmail(req, W.access))) {
+    if (tokenEq(u.searchParams.get('key'), W.key)) return send(res, 302, '', 'text/plain', { 'set-cookie': `mt_key=${W.key}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax${isHttpsReq(req) ? '; Secure' : ''}`, location: '/' });
     if (LOGIN) return u.pathname.startsWith('/api/') ? send(res, 401, { error: '需要登录' }) : send(res, 302, '', 'text/plain', { location: '/login' });
     return send(res, 401, '<meta charset="utf-8"><body style="font:16px system-ui;padding:40px">需要访问口令。请用带 <code>?key=…</code> 的地址打开一次。</body>', 'text/html; charset=utf-8');
   }
@@ -152,14 +160,16 @@ async function handle(req, res) {
     let f;
     if (u.pathname === '/shot') f = path.join(ep.dir, '发布档案', `${(u.searchParams.get('p') || '').replace(/\W/g, '')}.jpg`);
     else { const pj = readPj(ep.dir) || {}; const rel = (pj.covers || {})[u.searchParams.get('k') || '4x3'] || Object.values(pj.covers || {})[0]; f = rel && path.join(ep.dir, rel); }
-    const norm = (p) => process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p);
-    if (!f || !norm(f).startsWith(norm(ep.dir)) || !fs.existsSync(f)) return send(res, 404, '');
+    if (!f || !isInside(ep.dir, f) || !fs.existsSync(f)) return send(res, 404, '');
     // 远程打开时原图（每张 ~700KB）太慢：默认给缩略图（长边 ≤ w，默认 720，JPEG），缓存在 data/thumbs；?full=1 给原图
     if (!u.searchParams.get('full') && !/\.svg$/.test(f)) { const t = thumb(f, Math.min(1600, +u.searchParams.get('w') || 720)); if (t) return send(res, 200, fs.readFileSync(t), 'image/jpeg', { 'cache-control': 'max-age=3600' }); }
     return send(res, 200, fs.readFileSync(f), /\.png$/.test(f) ? 'image/png' : /\.svg$/.test(f) ? 'image/svg+xml' : 'image/jpeg', { 'cache-control': 'max-age=300' });
   }
   if (u.pathname === '/api/action' && req.method === 'POST') {
-    let body = ''; req.on('data', d => body += d); req.on('end', () => {
+    let body = '', tooBig = false;
+    req.on('data', d => { body += d; if (body.length > 65536) { tooBig = true; req.destroy(); } });
+    req.on('end', () => {
+      if (tooBig) return;
       let a; try { a = JSON.parse(body); } catch { return send(res, 400, { error: '请求格式不对' }); }
       const map = { sync: ['sync', a.id], metrics: a.id ? ['metrics', a.id] : ['metrics'], doctor: ['doctor', '--notify'], board: ['board'], followers: ['followers'],
         mark: ['mark', a.id, a.platform, a.state, a.note || '在麦田里标记', ...(a.url ? ['--url', a.url] : [])] };
@@ -181,7 +191,7 @@ async function handle(req, res) {
 export function startWeb() {
   const srv = http.createServer((req, res) => { handle(req, res).catch((e) => { try { send(res, 500, { error: e.message }); } catch {} }); });
   initLogin(ROOT);
-  srv.listen(W.port, '0.0.0.0', () => console.log(`麦田网页：http://localhost:${W.port}/?key=${W.key}`));
+  srv.listen(W.port, W.host || '127.0.0.1', () => console.log(`麦田网页：http://localhost:${W.port}/?key=${W.key}`));
   srv.on('error', (e) => console.error('麦田网页没起来：' + e.message));
   return srv;
 }

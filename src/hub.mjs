@@ -110,7 +110,7 @@ async function submitOne() {
 async function run() {
   const dir = path.resolve(args[1] || '');
   if (!fs.existsSync(path.join(dir, 'publish.json'))) throw new Error(`${dir} 里没有 publish.json`);
-  try { execFileSync('node', [path.join(config.pluginDir, 'tools/validate.mjs'), dir], { stdio: 'pipe' }); }
+  try { execFileSync(process.execPath, [path.join(config.pluginDir, 'tools/validate.mjs'), dir], { stdio: 'pipe' }); }
   catch (e) { throw new Error(`校验没通过：\n${(e.stdout || '').toString().slice(-800)}`); }
   const pj = loadProject(dir), ep = { id: pj.id, episode: pj.episode, name: pj.name, dir, schedule: pj.schedule || null };
   upsertEpisode(ep); saveSnapshot(ep.id, pj, true);
@@ -292,12 +292,22 @@ const extId = () => config.extensionId || [...crypto.createHash('sha256').update
 function startArticleJob(ep, pj) {
   const x = pj.platforms.x, dir = ep.dir, logf = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', `x-article-${ep.id}.log`);
   const textf = path.join(path.dirname(logf), `x-article-${ep.id}.txt`); fs.writeFileSync(textf, x.text || '');
-  try { execFileSync('lsof', ['-iTCP:8765', '-sTCP:LISTEN'], { stdio: 'pipe' }); }
-  catch { spawn(process.execPath, ['tools/bridge-server.mjs'], { cwd: config.pluginDir, detached: true, stdio: 'ignore' }).unref(); }
-  try { execFileSync('open', ['-g', '-a', 'Google Chrome', `chrome-extension://${extId()}/sidepanel.html`], { stdio: 'pipe' }); } catch {}
+  const panelUrl = `chrome-extension://${extId()}/sidepanel.html`;
+  if (process.platform === 'win32') {
+    spawn(process.execPath, ['tools/bridge-server.mjs'], { cwd: config.pluginDir, detached: true, stdio: 'ignore', env: { ...process.env, BRIDGE_EXT_ID: extId() } }).unref();
+    const chromeBin = ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe', path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe')].find(fs.existsSync) || 'chrome.exe';
+    try { spawn(chromeBin, [panelUrl], { detached: true, stdio: 'ignore' }).unref(); } catch {}
+  } else {
+    try { execFileSync('lsof', ['-iTCP:8765', '-sTCP:LISTEN'], { stdio: 'pipe' }); }
+    catch { spawn(process.execPath, ['tools/bridge-server.mjs'], { cwd: config.pluginDir, detached: true, stdio: 'ignore', env: { ...process.env, BRIDGE_EXT_ID: extId() } }).unref(); }
+    try { execFileSync('open', ['-g', '-a', 'Google Chrome', panelUrl], { stdio: 'pipe' }); } catch {}
+  }
   const out = fs.openSync(logf, 'a');
-  spawn('caffeinate', ['-dims', process.execPath, path.join(config.pluginDir, 'tools/x-article-quote.mjs'), '--draft', x.article, '--video', path.join(dir, pj.video || '成片.mp4'),
-    '--text', textf, '--at', pj.schedule, '--prep', '20', '--hub-id', ep.id], { cwd: config.pluginDir, detached: true, stdio: ['ignore', out, out], env: { ...process.env, PUBLISH_HUB: path.resolve(path.dirname(logf), '..') } }).unref();
+  const scriptArgs = [path.join(config.pluginDir, 'tools/x-article-quote.mjs'), '--draft', x.article, '--video', path.join(dir, pj.video || '成片.mp4'),
+    '--text', textf, '--at', pj.schedule, '--prep', '20', '--hub-id', ep.id];
+  const bin = process.platform === 'darwin' ? 'caffeinate' : process.execPath;
+  const binArgs = process.platform === 'darwin' ? ['-dims', process.execPath, ...scriptArgs] : scriptArgs;
+  spawn(bin, binArgs, { cwd: config.pluginDir, detached: true, stdio: ['ignore', out, out], env: { ...process.env, PUBLISH_HUB: path.resolve(path.dirname(logf), '..') } }).unref();
   log(ep.id, 'x', 'article-job', `启动长文脚本，日志 ${logf}`);
 }
 
@@ -342,7 +352,7 @@ async function daemon() {
         const zt = tasks.find(t => t.platform === 'zsz');
         if (zt && zt.state === 'pending' && sched && Date.now() >= sched - ZSZ_LEAD * MIN && Date.now() < sched + 6 * 60 * MIN && every(`zszrun:${ep.id}`, 20 * MIN)) {
           log(ep.id, 'zsz', 'deferred-run', '定时前自动建课');
-          execFileSync('node', [path.join(path.dirname(fileURLToPath(import.meta.url)), 'hub.mjs'), 'run', ep.dir, '--only', 'zsz'], { stdio: 'inherit', timeout: 40 * MIN });
+          execFileSync(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), 'hub.mjs'), 'run', ep.dir, '--only', 'zsz'], { stdio: 'inherit', timeout: 40 * MIN });
         }
         if (zt && zt.state === 'scheduled' && every(`zszcheck:${ep.id}`, 10 * MIN)) {
           const pj0 = loadProject(ep.dir); const cs = await zszCourses(pj0.platforms.zsz.title).catch(() => []);
@@ -370,7 +380,7 @@ async function daemon() {
       // 登录保活：定期打开一下后台首页（视频号的扫码登录过期快），掉线就提醒，并记下每次保持了多久
       for (const id of config.keepAlive || []) {
         if (!every(`keep:${id}`, (config.keepAliveMinutes || 60) * MIN)) continue;
-        const ok = await drv.withTab(LOGIN_PAGES[id], async (t) => !/login|passport|signin/i.test((await chrome.tabs.get(t)).url) && !(await drv.evaluate(t, `/扫码登录/.test(document.body.innerText) && /验证码登录|密码登录/.test(document.body.innerText)`).catch(() => false)), { wait: 12000 }).catch(() => null);
+        const ok = await drv.withTab(LOGIN_PAGES[id], async (t) => !/login|passport|signin/i.test(await drv.getTabUrl(t)) && !(await drv.evaluate(t, `/扫码登录/.test(document.body.innerText) && /验证码登录|密码登录/.test(document.body.innerText)`).catch(() => false)), { wait: 12000 }).catch(() => null);
         if (ok === null) continue;
         const was = getMeta(`login:${id}`);
         if (ok && was !== 'ok') { setMeta(`login:${id}`, 'ok'); setMeta(`loginSince:${id}`, Date.now()); }

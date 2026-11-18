@@ -25,8 +25,10 @@ if (-not (Test-Path $CfgPath)) {
   $Ex.PSObject.Properties.Remove("xHandle")
   $Ex.PSObject.Properties.Remove("site")
   $Ex.PSObject.Properties.Remove("board")
+  $Ex.PSObject.Properties.Remove("tunnel")
   New-Item -ItemType Directory -Force -Path $Ex.rootPath | Out-Null
-  $Ex | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 $CfgPath
+  $Json = ($Ex | ConvertTo-Json -Depth 10) + "`n"
+  [System.IO.File]::WriteAllText($CfgPath, $Json, [System.Text.UTF8Encoding]::new($false))
   Write-Host "已生成 config.json，网页访问：http://localhost:8787/?key=$Key"
 } else {
   Write-Host "已存在 config.json，跳过生成。"

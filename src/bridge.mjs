@@ -1,10 +1,24 @@
 // 通过插件的开发桥（tools/bridge-server.mjs + 面板页）指挥 Chrome
+import fs from 'node:fs';
+import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { config } from './feishu.mjs';
 export const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+const CHROME_WIN = [
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+];
+const chromeBin = () => CHROME_WIN.find(fs.existsSync) || 'chrome.exe';
+
 export async function call(cmd, timeout = 30000) {
-  const r = await fetch(`${config.bridge}/cmd`, { method: 'POST', body: JSON.stringify(cmd), signal: AbortSignal.timeout(timeout) });
+  const r = await fetch(`${config.bridge}/cmd`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-maitian-bridge': '1' },
+    body: JSON.stringify(cmd),
+    signal: AbortSignal.timeout(timeout),
+  });
   const j = await r.json();
   if (!j.ok) throw new Error(j.error);
   return j.result;
@@ -20,14 +34,18 @@ const ping = () => call({ op: 'ping' }, 8000).then(() => true, () => false);
 // 确保桥接服务在跑、插件面板页开着
 export async function ensureBridge() {
   let listening = true;
-  try { await fetch(config.bridge, { signal: AbortSignal.timeout(2000) }); } catch { listening = false; }
+  try { await fetch(`${config.bridge}/status`, { signal: AbortSignal.timeout(2000) }); } catch { listening = false; }
   if (!listening) {
-    spawn('node', ['tools/bridge-server.mjs'], { cwd: config.pluginDir, detached: true, stdio: 'ignore' }).unref();
+    spawn(process.execPath, ['tools/bridge-server.mjs'], {
+      cwd: config.pluginDir, detached: true, stdio: 'ignore',
+      env: { ...process.env, BRIDGE_EXT_ID: config.extensionId || '' },
+    }).unref();
     await sleep(1500);
   }
   if (await ping()) return;
-  if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '', `chrome-extension://${config.extensionId}/sidepanel.html`], { detached: true, stdio: 'ignore' }).unref();
-  else execFileSync('open', ['-g', '-a', 'Google Chrome', `chrome-extension://${config.extensionId}/sidepanel.html`]);
+  const panelUrl = `chrome-extension://${config.extensionId}/sidepanel.html`;
+  if (process.platform === 'win32') spawn(chromeBin(), [panelUrl], { detached: true, stdio: 'ignore' }).unref();
+  else execFileSync('open', ['-g', '-a', 'Google Chrome', panelUrl]);
   for (let i = 0; i < 10; i++) { await sleep(2000); if (await ping()) return; }
   throw new Error('插件面板没有响应：Chrome 可能有弹窗卡住，或插件没加载');
 }
