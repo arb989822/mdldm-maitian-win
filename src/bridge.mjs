@@ -44,8 +44,19 @@ export async function ensureBridge() {
   }
   if (await ping()) return;
   const panelUrl = `chrome-extension://${config.extensionId}/sidepanel.html`;
-  if (process.platform === 'win32') spawn(chromeBin(), [panelUrl], { detached: true, stdio: 'ignore' }).unref();
-  else execFileSync('open', ['-g', '-a', 'Google Chrome', panelUrl]);
+  if (process.platform === 'win32') {
+    let alreadyOpen = false;
+    try {
+      const list = await fetch(`http://127.0.0.1:${config.chromePort || 9333}/json/list`, { signal: AbortSignal.timeout(1500) }).then(r => r.json());
+      alreadyOpen = Array.isArray(list) && list.some(t => t.url && t.url.includes('/sidepanel.html'));
+    } catch {}
+    if (!alreadyOpen) {
+      const profile = (config.chromeProfile || '').replace(/^~(?=[\\/]|$)/, process.env.USERPROFILE || '');
+      const port = config.chromePort || 9333;
+      const args = profile ? [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, panelUrl] : [panelUrl];
+      spawn(chromeBin(), args, { detached: true, stdio: 'ignore' }).unref();
+    }
+  } else execFileSync('open', ['-g', '-a', 'Google Chrome', panelUrl]);
   for (let i = 0; i < 10; i++) { await sleep(2000); if (await ping()) return; }
   throw new Error('插件面板没有响应：Chrome 可能有弹窗卡住，或插件没加载');
 }
