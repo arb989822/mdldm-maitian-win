@@ -5,7 +5,7 @@ description: 麦田工作台的发布流程：把一条剪好的成片，整理�
 
 # 麦田 · 发布流程
 
-> 配合 [麦田](https://github.com/CzzzzzzJ/mdldm-maitian)（调度和数据）与 [麦田发布助手](https://github.com/CzzzzzzJ/mdldm-maitian-publisher)（各平台填写）使用。
+> 配合 [麦田 Windows 版](https://github.com/arb989822/mdldm-maitian-win)（调度和数据）与 [麦田发布助手 Windows 版](https://github.com/arb989822/mdldm-maitian-publisher-win)（各平台填写，含快手）使用。
 > 这份是通用版。你的个人偏好（文风、账号名、引流链接、封面模板）写在自己的个人 skill 里，开头写「先读 maitian-publish，再按本文件覆盖」。
 
 ## 三者分工
@@ -67,6 +67,11 @@ description: 麦田工作台的发布流程：把一条剪好的成片，整理�
 ……
 #账号名 #话题2
 
+## 快手
+**正文：**
+……（第一行放提问标题，随后放描述正文）
+#账号名 #话题2
+
 ## 七、YouTube
 **标题：**
 ……（≤100 字）
@@ -110,10 +115,10 @@ ffmpeg -v error -y -i 封面/cover-4x3.png -filter_complex "[0]scale=1920:1080:f
 
 ```
 <rootPath>/<系列>/<期>/
-  成片.mp4            统一叫这个名字
+  成片.mp4            统一叫这个名字（必须 ffmpeg -c copy -movflags +faststart）
   字幕.srt            可选
   发布素材.md         ② 的备份
-  封面/cover-3x4.png  cover-4x3.png  cover-16x9.jpg
+  封面/cover-3x4.png  cover-4x3.png  cover-9x16.jpg  cover-16x9.jpg
 ```
 
 - 成片导出后先把响度标准化到 -16 LUFS（只重编码音频），并且**必须 faststart**（`-movflags +faststart`），否则小红书报「无视频流信息」。
