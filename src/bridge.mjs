@@ -28,7 +28,7 @@ export async function evaluate(tabId, expression, timeout = 30000) {
   if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
   return r.result.value;
 }
-export const panel = (name, args = [], timeout = 60000) => call({ op: 'panel', name, args }, timeout);
+export const panel = (name, args = [], timeout = 60000) => call({ op: 'panel', name, args, timeout }, timeout);
 const ping = () => call({ op: 'ping' }, 8000).then(() => true, () => false);
 
 // 确保桥接服务在跑、插件面板页开着

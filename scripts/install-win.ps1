@@ -10,7 +10,7 @@ if ([int]$NodeVer[0] -lt 22 -or ([int]$NodeVer[0] -eq 22 -and [int]$NodeVer[1] -
 
 $CfgPath = Join-Path $Base "config.json"
 if (-not (Test-Path $CfgPath)) {
-  $Ex = Get-Content (Join-Path $Base "config.example.json") -Raw | ConvertFrom-Json
+  $Ex = Get-Content (Join-Path $Base "config.example.json") -Raw -Encoding UTF8 | ConvertFrom-Json
   $PubDir = Join-Path (Split-Path -Parent $Base) "mdldm-maitian-publisher"
   $Key = -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 16 | ForEach-Object {[char]$_})
   $Ex.pluginDir = $PubDir

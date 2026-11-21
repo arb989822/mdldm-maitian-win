@@ -56,7 +56,7 @@ export async function runBatch(project, batch, onState, onStall) {
   }
 }
 export async function checkLogin(ids) {
-  if (mode === 'plugin') { const r = await bridge.panel('checkLogin', [ids], 120000); return r && r.ok ? r.result : {}; }
+  if (mode === 'plugin') { const r = await bridge.panel('checkLogin', [ids], 300000); return r && r.ok ? r.result : {}; }
   return (await load()).pub.preflight(ids, { keepTabs: false });
 }
 export async function links(project, ids) {
